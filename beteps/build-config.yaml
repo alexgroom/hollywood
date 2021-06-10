@@ -1,0 +1,134 @@
+kind: BuildConfig
+apiVersion: build.openshift.io/v1
+metadata:
+  annotations:
+    openshift.io/generated-by: OpenShiftNewBuild
+  namespace: ag-beteps
+  labels:
+    build: build1
+spec:
+  nodeSelector: null
+  output:
+    to:
+      kind: ImageStreamTag
+      name: 'build1:latest'
+  resources: {}
+  successfulBuildsHistoryLimit: 5
+  failedBuildsHistoryLimit: 5
+  strategy:
+    type: Docker
+    dockerStrategy:
+      from:
+        kind: ImageStreamTag
+        name: 'alpine:3.12'
+  postCommit: {}
+  source:
+    type: Git
+    dockerfile: >
+      # syntax = docker/dockerfile:experimental
+
+      FROM elixir:1.11.2-alpine as builder
+
+
+      RUN apk add --no-cache --update git build-base nodejs yarn openssh-client
+
+
+      ADD secrets /etc/secrets
+
+      #RUN git config --global user.name "alexgroom"
+
+      #RUN git config --global user.email "alex.groom@gmail.com"
+
+      RUN mkdir -p ~/.ssh && touch ~/.ssh/known_hosts && ssh-keyscan github.com
+      >> ~/.ssh/known_hosts
+
+      WORKDIR /app
+
+
+      RUN mix do local.hex --force, local.rebar --force
+
+
+      COPY ./mix.exs ./mix.lock ./
+
+
+      COPY ./apps/bet_eps/mix.exs ./apps/bet_eps/mix.exs
+
+
+      COPY ./apps/web/mix.exs ./apps/web/mix.exs
+
+
+      COPY ./apps/bet_messages/mix.exs ./apps/bet_messages/mix.exs
+
+
+      COPY ./config/config.exs ./config/config.exs
+
+
+      COPY ./config/prod.exs ./config/prod.exs
+
+
+      ENV MIX_ENV=prod
+
+      RUN eval "$(ssh-agent)" && ssh-agent -s && chmod -R 0600 /etc/secrets &&
+      ssh-add /etc/secrets/**/* && \
+        mix do deps.get --only $MIX_ENV, deps.compile
+
+      RUN   rm -rf /etc/secrets
+
+
+      COPY apps apps
+
+
+      RUN MIX_ENV=prod mix compile
+
+
+      COPY ./rel ./rel
+
+
+      COPY ./config/releases.exs ./config/releases.exs
+
+
+      RUN MIX_ENV=prod mix release > /dev/null
+
+
+      FROM alpine:3.12 AS release
+
+
+      RUN apk add --update --no-cache openssl ncurses-libs snappy
+
+
+      WORKDIR /app
+
+
+      COPY --from=builder /app/_build/prod/rel/beteps/ .
+
+
+      RUN find /app -type f -perm +0100 -exec chmod 555 {} \;
+
+
+      ENTRYPOINT ["./bin/beteps"]
+
+
+      CMD [""]
+    git:
+      uri: 'git@github.com:bet01/beteps.git'
+    sourceSecret:
+      name: ssh-secret
+    secrets:
+      - secret:
+          name: ssh-secret
+        destinationDir: secrets/ssh-secret
+  triggers:
+    - type: GitHub
+      github:
+        secret: 5vWY7YvmdJ-UPoK3i_pL
+    - type: Generic
+      generic:
+        secret: UEABF7f8qYd1ZSAe_NhG
+    - type: ConfigChange
+    - type: ImageChange
+      imageChange:
+        lastTriggeredImageID: >-
+          alpine@sha256:a9c28c813336ece5bb98b36af5b66209ed777a394f4f856c6e62267790883820
+  runPolicy: Serial
+status:
+  lastVersion: 41
