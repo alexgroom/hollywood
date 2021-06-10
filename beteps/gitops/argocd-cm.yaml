@@ -1,0 +1,44 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  namespace: openshift-gitops
+  ownerReferences:
+    - apiVersion: argoproj.io/v1alpha1
+      kind: ArgoCD
+      name: openshift-gitops
+      uid: c63df3c8-903b-4602-bff4-4afcc2a21757
+      controller: true
+      blockOwnerDeletion: true
+  labels:
+    app.kubernetes.io/managed-by: openshift-gitops
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  admin.enabled: 'true'
+  statusbadge.enabled: 'false'
+  resource.exclusions: |
+    - apiGroups:
+      - tekton.dev
+      clusters:
+      - '*'
+      kinds:
+      - TaskRun
+      - PipelineRun
+  ga.trackingid: ''
+  repositories: ''
+  ga.anonymizeusers: 'false'
+  help.chatUrl: ''
+  url: 'https://openshift-gitops-server-openshift-gitops.apps.ocp.betsolutions.net'
+  help.chatText: ''
+  kustomize.buildOptions: ''
+  resource.inclusions: ''
+  users.anonymous.enabled: 'false'
+  configManagementPlugins: |
+    - name: tanka
+      init: 
+        command: ["/bin/sh"]
+        args: ["-c","jb install"]
+      generate: 
+        command: ["/bin/sh"]
+        args: ["-c","tk show environments/${TK_ENV} --dangerous-allow-redirect ${EXTRA_ARGS}"]       
+  application.instanceLabelKey: ''
