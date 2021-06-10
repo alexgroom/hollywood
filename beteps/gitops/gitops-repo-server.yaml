@@ -1,0 +1,124 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '2'
+  namespace: openshift-gitops
+  ownerReferences:
+    - apiVersion: argoproj.io/v1alpha1
+      kind: ArgoCD
+      name: openshift-gitops
+      uid: c63df3c8-903b-4602-bff4-4afcc2a21757
+      controller: true
+      blockOwnerDeletion: true
+  labels:
+    app.kubernetes.io/component: repo-server
+    app.kubernetes.io/managed-by: openshift-gitops
+    app.kubernetes.io/name: openshift-gitops-repo-server
+    app.kubernetes.io/part-of: argocd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openshift-gitops-repo-server
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app.kubernetes.io/name: openshift-gitops-repo-server
+    spec:
+      restartPolicy: Always
+      initContainers:
+        - resources: {}
+          terminationMessagePath: /dev/termination-log
+          name: download-tools
+          command:
+            - /bin/sh
+            - '-c'
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: custom-tools
+              mountPath: /custom-tools
+          terminationMessagePolicy: File
+          image: curlimages/curl
+          args:
+            - >-
+              curl -Lo /custom-tools/jb
+              https://github.com/jsonnet-bundler/jsonnet-bundler/releases/latest/download/jb-linux-amd64
+              && curl -Lo /custom-tools/tk
+              https://github.com/grafana/tanka/releases/download/v0.12.0/tk-linux-amd64
+              && chmod +x /custom-tools/tk && chmod +x /custom-tools/jb
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 30
+      securityContext: {}
+      containers:
+        - resources: {}
+          readinessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          name: argocd-repo-server
+          command:
+            - uid_entrypoint.sh
+            - argocd-repo-server
+            - '--redis'
+            - 'openshift-gitops-redis.openshift-gitops.svc.cluster.local:6379'
+          livenessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          ports:
+            - name: server
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 8084
+              protocol: TCP
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: ssh-known-hosts
+              mountPath: /app/config/ssh
+            - name: tls-certs
+              mountPath: /app/config/tls
+            - name: gpg-keyring
+              mountPath: /app/config/gpg/keys
+            - name: custom-tools
+              mountPath: /usr/local/bin/jb
+              subPath: jb
+            - name: custom-tools
+              mountPath: /usr/local/bin/tk
+              subPath: tk
+          terminationMessagePolicy: File
+          image: >-
+            registry.redhat.io/openshift-gitops-1/argocd-rhel8@sha256:1da88dd045197f3a64c9508e290fd64f23dc0648bc304f6416e952d9404bee57
+      automountServiceAccountToken: false
+      volumes:
+        - name: ssh-known-hosts
+          configMap:
+            name: argocd-ssh-known-hosts-cm
+            defaultMode: 420
+        - name: tls-certs
+          configMap:
+            name: argocd-tls-certs-cm
+            defaultMode: 420
+        - name: gpg-keyring
+          emptyDir: {}
+        - name: custom-tools
+          emptyDir: {}
+      dnsPolicy: ClusterFirst
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
